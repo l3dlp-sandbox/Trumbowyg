@@ -61,6 +61,7 @@ jQuery.trumbowyg = {
 
     // SVG Path globally
     svgPath: null,
+    svgAbsoluteUseHref: false,
 
     hideButtonTexts: null
 };
@@ -75,9 +76,10 @@ Object.defineProperty(jQuery.trumbowyg, 'defaultOptions', {
         autogrow: false,
         autogrowOnEnter: false,
         imageWidthModalEdit: false,
+        hideButtonTexts: null,
 
         prefix: 'trumbowyg-',
-
+        tagClasses: {},
         semantic: true,
         semanticKeepAttributes: false,
         resetCss: false,
@@ -110,9 +112,12 @@ Object.defineProperty(jQuery.trumbowyg, 'defaultOptions', {
         // imgDblClickHandler: default is defined in constructor
 
         plugins: {},
+
         urlProtocol: false,
         minimalLinks: false,
-        defaultLinkTarget: undefined
+        defaultLinkTarget: undefined,
+
+        svgPath: null
     },
     writable: false,
     enumerable: true,
@@ -217,41 +222,47 @@ Object.defineProperty(jQuery.trumbowyg, 'defaultOptions', {
         // SVG path
         var svgPathOption = $trumbowyg.svgPath != null ? $trumbowyg.svgPath : options.svgPath;
         t.hasSvg = svgPathOption !== false;
-        t.svgPath = !!t.doc.querySelector('base') ? window.location.href.split('#')[0] : '';
-        if ($('#' + trumbowygIconsId, t.doc).length === 0 && svgPathOption !== false) {
+
+        if (svgPathOption !== false && ($trumbowyg.svgAbsoluteUseHref || $('#' + trumbowygIconsId, t.doc).length === 0)) {
             if (svgPathOption == null) {
                 // Hack to get svgPathOption based on trumbowyg.js path
-                var scriptElements = document.getElementsByTagName('script');
-                for (var i = 0; i < scriptElements.length; i += 1) {
-                    var source = scriptElements[i].src;
+                var $scriptElements = $('script[src]');
+                $scriptElements.each(function (i, scriptElement) {
+                    var source = scriptElement.src;
                     var matches = source.match('trumbowyg(\.min)?\.js');
                     if (matches != null) {
                         svgPathOption = source.substring(0, source.indexOf(matches[0])) + 'ui/icons.svg';
                     }
-                }
-                if (svgPathOption == null) {
-                    console.warn('You must define svgPath: https://goo.gl/CfTY9U'); // jshint ignore:line
-                }
+                });
             }
 
-            var div = t.doc.createElement('div');
-            div.id = trumbowygIconsId;
-            t.doc.body.insertBefore(div, t.doc.body.childNodes[0]);
-            $.ajax({
-                async: true,
-                type: 'GET',
-                contentType: 'application/x-www-form-urlencoded; charset=UTF-8',
-                dataType: 'xml',
-                crossDomain: true,
-                url: svgPathOption,
-                data: null,
-                beforeSend: null,
-                complete: null,
-                success: function (data) {
-                    div.innerHTML = new XMLSerializer().serializeToString(data.documentElement);
-                }
-            });
+            // Do not merge with previous if block: svgPathOption can be redefined in it.
+            // Here we are checking that we find a match
+            if (svgPathOption == null) {
+                console.warn('You must define svgPath: https://goo.gl/CfTY9U'); // jshint ignore:line
+            } else if (!$trumbowyg.svgAbsoluteUseHref) {
+                var div = t.doc.createElement('div');
+                div.id = trumbowygIconsId;
+                t.doc.body.insertBefore(div, t.doc.body.childNodes[0]);
+                $.ajax({
+                    async: true,
+                    type: 'GET',
+                    contentType: 'application/x-www-form-urlencoded; charset=UTF-8',
+                    dataType: 'xml',
+                    crossDomain: true,
+                    url: svgPathOption,
+                    data: null,
+                    beforeSend: null,
+                    complete: null,
+                    success: function (data) {
+                        div.innerHTML = new XMLSerializer().serializeToString(data.documentElement);
+                    }
+                });
+            }
         }
+
+        var baseHref = !!t.doc.querySelector('base') ? window.location.href.split(/[?#]/)[0] : '';
+        t.svgPath = $trumbowyg.svgAbsoluteUseHref ? svgPathOption : baseHref;
 
 
         /**
@@ -407,7 +418,7 @@ Object.defineProperty(jQuery.trumbowyg, 'defaultOptions', {
             }
         };
 
-        // Defaults Options
+        // Default Options
         t.o = $.extend(true, {}, $trumbowyg.defaultOptions, options);
         if (!t.o.hasOwnProperty('imgDblClickHandler')) {
             t.o.imgDblClickHandler = t.getDefaultImgDblClickHandler();
@@ -496,7 +507,7 @@ Object.defineProperty(jQuery.trumbowyg, 'defaultOptions', {
                 return;
             }
 
-            if (typeof(protocol) !== 'string') {
+            if (typeof (protocol) !== 'string') {
                 return 'https://';
             }
             return protocol.replace('://', '') + '://';
@@ -584,6 +595,11 @@ Object.defineProperty(jQuery.trumbowyg, 'defaultOptions', {
             t.$ed
                 .on('dblclick', 'img', t.o.imgDblClickHandler)
                 .on('keydown', function (e) {
+                    // append flags to differentiate Chrome spans
+                    var keyCode = e.which;
+                    if (keyCode === 8 || keyCode === 13 || keyCode === 46) {
+                        t.toggleSpan(true);
+                    }
                     if ((e.ctrlKey || e.metaKey) && !e.altKey) {
                         ctrl = true;
                         var key = t.keys[String.fromCharCode(e.which).toUpperCase()];
@@ -591,7 +607,8 @@ Object.defineProperty(jQuery.trumbowyg, 'defaultOptions', {
                         try {
                             t.execCmd(key.fn, key.param);
                             return false;
-                        } catch (c) {}
+                        } catch (c) {
+                        }
                     } else {
                         if (t.o.tabToIndent && e.key === 'Tab') {
                             try {
@@ -601,7 +618,8 @@ Object.defineProperty(jQuery.trumbowyg, 'defaultOptions', {
                                     t.execCmd('indent', true, null);
                                 }
                                 return false;
-                            } catch (c) {}
+                            } catch (c) {
+                            }
                         }
                     }
                 })
@@ -619,6 +637,11 @@ Object.defineProperty(jQuery.trumbowyg, 'defaultOptions', {
 
                     if (keyCode >= 37 && keyCode <= 40) {
                         return;
+                    }
+
+                    // remove Chrome generated span tags
+                    if (keyCode === 8 || keyCode === 13 || keyCode === 46) {
+                        t.toggleSpan();
                     }
 
                     if ((e.ctrlKey || e.metaKey) && (keyCode === 89 || keyCode === 90)) {
@@ -659,15 +682,14 @@ Object.defineProperty(jQuery.trumbowyg, 'defaultOptions', {
                         if (e.type === 'focus') {
                             t.autogrowOnEnterWasFocused = true;
                             t.autogrowEditorOnEnter();
-                        }
-                        else if (!t.o.autogrow) {
+                        } else if (!t.o.autogrow) {
                             t.$ed.css({height: t.$ed.css('min-height')});
                             t.$c.trigger('tbwresize');
                         }
                     }
                 })
                 .on('keyup focus', function () {
-                    if (!t.$ta.val().match(/<.*>/)) {
+                  if (!t.$ta.val().match(/<.*>/) && !t.$ed.html().match(/<.*>/)) {
                         setTimeout(function () {
                             var block = t.isIE ? '<p>' : 'p';
                             t.doc.execCommand('formatBlock', false, block);
@@ -872,8 +894,8 @@ Object.defineProperty(jQuery.trumbowyg, 'defaultOptions', {
                 type: 'button',
                 class: prefix + btnName + '-dropdown-button ' + (btn.class || '') + (btn.ico ? ' ' + prefix + btn.ico + '-button' : ''),
                 html: t.hasSvg && hasIcon ?
-                  '<svg><use xlink:href="' + t.svgPath + '#' + prefix + (btn.ico || btnName).replace(/([A-Z]+)/g, '-$1').toLowerCase() + '"/></svg>' + (btn.text || btn.title || t.lang[btnName] || btnName) :
-                  (btn.text || btn.title || t.lang[btnName] || btnName),
+                    '<svg><use xlink:href="' + t.svgPath + '#' + prefix + (btn.ico || btnName).replace(/([A-Z]+)/g, '-$1').toLowerCase() + '"/></svg>' + (btn.text || btn.title || t.lang[btnName] || btnName) :
+                    (btn.text || btn.title || t.lang[btnName] || btnName),
                 title: (btn.key ? '(' + (t.isMac ? 'Cmd' : 'Ctrl') + ' + ' + btn.key + ')' : null),
                 style: btn.style || null,
                 mousedown: function () {
@@ -1061,6 +1083,22 @@ Object.defineProperty(jQuery.trumbowyg, 'defaultOptions', {
             }, 0);
         },
 
+        // Remove or add flags to span tags to remove Chrome generated spans
+        toggleSpan: function (addFlag) {
+            var t = this;
+            t.$ed.find('span').each(function () {
+                if (addFlag === true) {
+                    $(this).attr('data-tbw-flag', true);
+                } else {
+                    if ($(this).attr('data-tbw-flag')) {
+                        $(this).removeAttr('data-tbw-flag');
+                    } else {
+                        $(this).contents().unwrap();
+                    }
+                }
+            });
+        },
+
         // Open dropdown when click on a button which open that
         dropdown: function (name) {
             var t = this,
@@ -1151,6 +1189,11 @@ Object.defineProperty(jQuery.trumbowyg, 'defaultOptions', {
             t.saveRange();
             t.syncCode(force);
 
+            var restoreRange = true;
+            if (t.range && t.range.collapsed) {
+                restoreRange = false;
+            }
+
             if (t.o.semantic) {
                 t.semanticTag('b', t.o.semanticKeepAttributes);
                 t.semanticTag('i', t.o.semanticKeepAttributes);
@@ -1186,7 +1229,7 @@ Object.defineProperty(jQuery.trumbowyg, 'defaultOptions', {
                     t.$ed.find('p:empty').remove();
                 }
 
-                if (!keepRange) {
+                if (!keepRange && restoreRange) {
                     t.restoreRange();
                 }
 
@@ -1194,8 +1237,9 @@ Object.defineProperty(jQuery.trumbowyg, 'defaultOptions', {
             }
         },
 
-        semanticTag: function (oldTag, copyAttributes) {
-            var newTag;
+        semanticTag: function (oldTag, copyAttributes, revert) {
+            var newTag, t = this;
+            var tmpTag = oldTag;
 
             if (this.o.semantic != null && typeof this.o.semantic === 'object' && this.o.semantic.hasOwnProperty(oldTag)) {
                 newTag = this.o.semantic[oldTag];
@@ -1205,19 +1249,34 @@ Object.defineProperty(jQuery.trumbowyg, 'defaultOptions', {
                 return;
             }
 
+            if(revert) {
+                oldTag = newTag;
+                newTag = tmpTag;
+            }
+
             $(oldTag, this.$ed).each(function () {
+                var resetRange = false;
                 var $oldTag = $(this);
-                if($oldTag.contents().length === 0) {
+                if ($oldTag.contents().length === 0) {
                     return false;
                 }
 
-                $oldTag.wrap('<' + newTag + '/>');
+                if(t.range.startContainer.parentNode && t.range.startContainer.parentNode === this) {
+                    resetRange = true;
+                }
+                var $newTag = $('<' + newTag + '/>');
+                $newTag.insertBefore($oldTag);
                 if (copyAttributes) {
                     $.each($oldTag.prop('attributes'), function () {
-                        $oldTag.parent().attr(this.name, this.value);
+                        $newTag.attr(this.name, this.value);
                     });
                 }
-                $oldTag.contents().unwrap();
+                $newTag.html($oldTag.html());
+                $oldTag.remove();
+                if(resetRange === true) {
+                    t.range.selectNodeContents($newTag.get(0));
+                    t.range.collapse(false);
+                }
             });
         },
 
@@ -1254,7 +1313,7 @@ Object.defineProperty(jQuery.trumbowyg, 'defaultOptions', {
 
             var options = {
                 url: {
-                    label: 'URL',
+                    label: t.lang.linkUrl || 'URL',
                     required: true,
                     value: url
                 },
@@ -1412,6 +1471,10 @@ Object.defineProperty(jQuery.trumbowyg, 'defaultOptions', {
                 t.$ed.focus();
             }
 
+            if(cmd === 'strikethrough' && t.o.semantic) {
+                t.semanticTag('strike', t.o.semanticKeepAttributes, true); // browsers cannot undo e.g. <del> as they expect <strike>
+            }
+
             try {
                 t.doc.execCommand('styleWithCSS', false, forceCss || false);
             } catch (c) {
@@ -1433,6 +1496,19 @@ Object.defineProperty(jQuery.trumbowyg, 'defaultOptions', {
 
                     t.syncCode();
                     t.semanticCode(false, true);
+                    try {
+                        var listId = window.getSelection().focusNode;
+                        if(!$(window.getSelection().focusNode.parentNode).hasClass('trumbowyg-editor')){
+                            listId = window.getSelection().focusNode.parentNode;
+                        }
+                        var classes = t.o.tagClasses[param];
+                        if (classes) {
+                            $(listId).addClass(classes);
+                        }
+                    } catch (e) {
+
+                    }
+
                 }
 
                 if (cmd !== 'dropdown') {
@@ -1485,19 +1561,19 @@ Object.defineProperty(jQuery.trumbowyg, 'defaultOptions', {
                     action: '',
                     html: content
                 })
-                  .on('submit', function () {
-                      $modal.trigger(CONFIRM_EVENT);
-                      return false;
-                  })
-                  .on('reset', function () {
-                      $modal.trigger(CANCEL_EVENT);
-                      return false;
-                  })
-                  .on('submit reset', function () {
-                      if (t.o.autogrowOnEnter) {
-                          t.autogrowOnEnterDontClose = false;
-                      }
-                  });
+                    .on('submit', function () {
+                        $modal.trigger(CONFIRM_EVENT);
+                        return false;
+                    })
+                    .on('reset', function () {
+                        $modal.trigger(CANCEL_EVENT);
+                        return false;
+                    })
+                    .on('submit reset', function () {
+                        if (t.o.autogrowOnEnter) {
+                            t.autogrowOnEnterDontClose = false;
+                        }
+                    });
             } else {
                 formOrContent = content;
             }
@@ -1809,9 +1885,9 @@ Object.defineProperty(jQuery.trumbowyg, 'defaultOptions', {
 
         clearButtonPaneStatus: function () {
             var t = this,
-              prefix = t.o.prefix,
-              activeClasses = prefix + 'active-button ' + prefix + 'active',
-              originalIconClass = prefix + 'original-icon';
+                prefix = t.o.prefix,
+                activeClasses = prefix + 'active-button ' + prefix + 'active',
+                originalIconClass = prefix + 'original-icon';
 
             // Reset all buttons and dropdown state
             $('.' + prefix + 'active-button', t.$btnPane).removeClass(activeClasses);
@@ -1849,12 +1925,12 @@ Object.defineProperty(jQuery.trumbowyg, 'defaultOptions', {
                         if (t.o.changeActiveDropdownIcon && $btnSvgUse.length > 0) {
                             // Save original icon
                             $dropdownBtn
-                              .addClass(originalIconClass)
-                              .data(originalIconClass, $dropdownBtnSvgUse.attr('xlink:href'));
+                                .addClass(originalIconClass)
+                                .data(originalIconClass, $dropdownBtnSvgUse.attr('xlink:href'));
 
                             // Put the active sub-button's icon
                             $dropdownBtnSvgUse
-                              .attr('xlink:href', $btnSvgUse.attr('xlink:href'));
+                                .attr('xlink:href', $btnSvgUse.attr('xlink:href'));
                         }
                     } catch (e) {
                     }
